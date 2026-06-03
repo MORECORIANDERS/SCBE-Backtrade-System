@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SCBE Backtrade System</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; color: #333; }
+
+.header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: #fff; padding: 20px 32px; }
+.header h1 { font-size: 22px; font-weight: 600; }
+.header .subtitle { font-size: 13px; color: #aab; margin-top: 4px; }
+
+.filters { background: #fff; padding: 16px 32px; border-bottom: 1px solid #e8e8e8; display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+.filters label { font-size: 13px; color: #666; margin-right: 6px; }
+.filters select { padding: 6px 12px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 13px; min-width: 180px; background: #fff; cursor: pointer; }
+.filters select:focus { outline: none; border-color: #4096ff; }
+
+.cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; padding: 20px 32px; }
+.card { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.card .label { font-size: 13px; color: #888; margin-bottom: 8px; }
+.card .value { font-size: 28px; font-weight: 700; }
+.card .sub { font-size: 12px; color: #999; margin-top: 4px; }
+.card.up .value { color: #cf1322; }
+.card.down .value { color: #3f8600; }
+.card.ratio .value { color: #0958d9; }
+.card.count .value { color: #531dab; }
+
+.charts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 0 32px 20px; }
+.chart-box { background: #fff; border-radius: 8px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.chart-box .chart-title { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: #333; }
+.chart-container { width: 100%; height: 360px; }
+
+.table-section { padding: 0 32px 32px; }
+.table-section .table-title { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: #333; }
+.table-wrap { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); overflow: hidden; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+thead { background: #fafafa; }
+th { padding: 10px 12px; text-align: left; font-weight: 600; color: #555; border-bottom: 2px solid #e8e8e8; cursor: pointer; white-space: nowrap; user-select: none; }
+th:hover { color: #1890ff; }
+th .sort-arrow { font-size: 10px; margin-left: 4px; color: #bbb; }
+th.sorted .sort-arrow { color: #1890ff; }
+td { padding: 8px 12px; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }
+tr:hover { background: #fafafa; }
+.positive { color: #cf1322; }
+.negative { color: #3f8600; }
+.table-scroll { max-height: 480px; overflow-y: auto; }
+.table-scroll thead { position: sticky; top: 0; z-index: 2; background: #fafafa; }
+.table-scroll thead th { background: #fafafa; }
+
+/* 搜索复合框 */
+.search-combo { position: relative; min-width: 240px; }
+.search-combo input { width: 100%; padding: 6px 12px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 13px; }
+.search-combo input:focus { outline: none; border-color: #4096ff; }
+.search-combo .dropdown { position: absolute; top: 100%; left: 0; right: 0; max-height: 260px; overflow-y: auto; background: #fff; border: 1px solid #d9d9d9; border-radius: 0 0 4px 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.12); z-index: 10; display: none; }
+.search-combo .dropdown.show { display: block; }
+.search-combo .dropdown .opt { padding: 6px 12px; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.search-combo .dropdown .opt:hover { background: #e6f4ff; }
+.search-combo .dropdown .opt.active { background: #bae0ff; font-weight: 600; }
+
+/* 图表描述 */
+.chart-desc { font-size: 12px; color: #aaa; margin-bottom: 8px; line-height: 1.5; }
+
+.loading { text-align: center; padding: 80px; font-size: 16px; color: #999; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>CBE Backtrade System</h1>
+  <div class="subtitle" id="subtitle">加载中...</div>
+</div>
+
+<div class="filters">
+  <div class="search-combo" id="bondCombo">
+    <label>转债选择</label>
+    <input type="text" id="bondInput" placeholder="输入代码或名称搜索..." autocomplete="off">
+    <div class="dropdown" id="bondDropdown"></div>
+  </div>
+  <div>
+    <label>倍数区间</label>
+    <select id="ratioSelect">
+      <option value="__all__">全部</option>
+      <option value="2~3x">2~3x</option>
+      <option value="3~5x">3~5x</option>
+      <option value="5~10x">5~10x</option>
+      <option value=">10x">&gt;10x</option>
+    </select>
+  </div>
+  <div>
+    <label>年份</label>
+    <select id="yearSelect"><option value="__all__">全部年份</option></select>
+  </div>
+</div>
+
+<div class="cards" id="cardsArea"></div>
+
+<div class="charts">
+  <div class="chart-box"><div class="chart-title">各持有期上行/下行差额对比</div><div class="chart-desc">对比4w/8w/16w/20w各持有期的平均上行差额与平均下行差额(绝对值)，观察盈亏不对称性随持有时间的变化</div><div class="chart-container" id="chart1"></div></div>
+  <div class="chart-box"><div class="chart-title">信号时间线</div><div class="chart-desc">按时间排列的信号分布，柱状为成交额倍数，折线为各持有期上行差额，可缩放查看不同时段</div><div class="chart-container" id="chart2"></div></div>
+  <div class="chart-box"><div class="chart-title">成交额倍数 vs 上行差额</div><div class="chart-desc">散点图探索放量倍数与16w上行差额的关系，颜色表示下行风险：绿=低风险，黄=中风险，红=高风险</div><div class="chart-container" id="chart3"></div></div>
+  <div class="chart-box"><div class="chart-title">倍数分层对比</div><div class="chart-desc">按成交额倍数区间(2~3x/3~5x/5~10x/>10x)分组，对比各持有期的上行和下行差额，判断放量程度与收益的关系</div><div class="chart-container" id="chart4"></div></div>
+  <div class="chart-box"><div class="chart-title">年度表现</div><div class="chart-desc">按年份统计各持有期的平均上行差额和信号数量，观察策略在不同市场环境下的稳定性</div><div class="chart-container" id="chart5"></div></div>
+  <div class="chart-box"><div class="chart-title">差额分布（箱线图）</div><div class="chart-desc">各持有期上行/下行差额的四分位分布，箱体=25%~75%，线=中位数，须=极值，展示收益的离散程度</div><div class="chart-container" id="chart6"></div></div>
+</div>
+
+<div class="table-section">
+  <div class="table-title">信号明细</div>
+  <div class="table-wrap">
+    <div class="table-scroll">
+      <table>
+        <thead id="tableHead"></thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============ 全局变量 ============
+let DATA = null;
+let filteredSignals = [];
+let sortCol = null;
+let sortAsc = true;
+let selectedBond = '__all__'; // 当前选中的转债
+
+const PERIODS = [4, 8, 16, 20];
+const RATIO_BANDS = ['2~3x', '3~5x', '5~10x', '>10x'];
+
+// ============ 加载数据 ============
+fetch('backtest_data.json')
+  .then(r => {
+    if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + r.statusText);
+    return r.text();
+  })
+  .then(text => {
+    console.log('JSON loaded, length:', text.length);
+    DATA = JSON.parse(text);
+    console.log('Parsed OK, bonds:', Object.keys(DATA.bonds).length, 'signals total:', DATA.summary.total_signals);
+    init();
+  })
+  .catch(err => {
+    document.getElementById('subtitle').textContent = '数据加载失败: ' + err.message;
+    console.error('Fetch error:', err);
+  });
+
+function init() {
+  document.getElementById('subtitle').textContent =
+    `生成时间: ${DATA.generated_at} | 阈值: ${DATA.config.threshold}x | 周期: ${DATA.config.periods.join('/')}`;
+
+  // 初始化搜索复合框
+  initBondCombo();
+
+  // 填充年份下拉
+  const yearSel = document.getElementById('yearSelect');
+  Object.keys(DATA.summary.by_year).sort().forEach(y => {
+    const opt = document.createElement('option');
+    opt.value = y;
+    opt.textContent = y;
+    yearSel.appendChild(opt);
+  });
+
+  // 绑定事件
+  document.getElementById('ratioSelect').addEventListener('change', update);
+  document.getElementById('yearSelect').addEventListener('change', update);
+
+  update();
+}
+
+// ============ 搜索复合框 ============
+function initBondCombo() {
+  const input = document.getElementById('bondInput');
+  const dropdown = document.getElementById('bondDropdown');
+
+  // 构建完整选项列表
+  const allBonds = [{ code: '__all__', name: '全部转债' }];
+  Object.keys(DATA.bonds).sort().forEach(code => {
+    allBonds.push({ code, name: DATA.bonds[code].name });
+  });
+
+  function renderDropdown(filter) {
+    const keyword = (filter || '').trim().toLowerCase();
+    let filtered = allBonds;
+    if (keyword) {
+      filtered = allBonds.filter(b =>
+        b.code.includes(keyword) || b.name.toLowerCase().includes(keyword)
+      );
+    }
+    // 最多显示50条
+    filtered = filtered.slice(0, 50);
+
+    dropdown.innerHTML = filtered.map(b => {
+      const isActive = b.code === selectedBond ? ' active' : '';
+      return `<div class="opt${isActive}" data-code="${b.code}">${b.code === '__all__' ? '全部转债' : b.code + ' ' + b.name}</div>`;
+    }).join('');
+
+    if (filtered.length === 0) {
+      dropdown.innerHTML = '<div class="opt" style="color:#999">无匹配结果</div>';
+    }
+
+    dropdown.classList.add('show');
+
+    // 绑定点击
+    dropdown.querySelectorAll('.opt[data-code]').forEach(el => {
+      el.addEventListener('mousedown', function(e) {
+        e.preventDefault(); // 阻止 blur 先触发
+        const code = this.dataset.code;
+        selectedBond = code;
+        if (code === '__all__') {
+          input.value = '';
+        } else {
+          input.value = code + ' ' + DATA.bonds[code].name;
+        }
+        dropdown.classList.remove('show');
+        update();
+      });
+    });
+  }
+
+  // 聚焦时显示下拉
+  input.addEventListener('focus', function() {
+    renderDropdown(this.value);
+  });
+
+  // 输入时过滤
+  input.addEventListener('input', function() {
+    renderDropdown(this.value);
+  });
+
+  // 失焦时关闭下拉，恢复显示当前选中项
+  input.addEventListener('blur', function() {
+    setTimeout(() => {
+      dropdown.classList.remove('show');
+      // 恢复输入框显示
+      if (selectedBond === '__all__') {
+        input.value = '';
+      } else {
+        input.value = selectedBond + ' ' + (DATA.bonds[selectedBond] ? DATA.bonds[selectedBond].name : '');
+      }
+    }, 200);
+  });
+
+  // 键盘导航
+  input.addEventListener('keydown', function(e) {
+    const opts = dropdown.querySelectorAll('.opt[data-code]');
+    if (!opts.length) return;
+
+    let activeIdx = -1;
+    opts.forEach((o, i) => { if (o.classList.contains('active')) activeIdx = i; });
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      activeIdx = Math.min(activeIdx + 1, opts.length - 1);
+      opts.forEach(o => o.classList.remove('active'));
+      opts[activeIdx].classList.add('active');
+      opts[activeIdx].scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      activeIdx = Math.max(activeIdx - 1, 0);
+      opts.forEach(o => o.classList.remove('active'));
+      opts[activeIdx].classList.add('active');
+      opts[activeIdx].scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (activeIdx >= 0) {
+        opts[activeIdx].dispatchEvent(new Event('mousedown'));
+      }
+    } else if (e.key === 'Escape') {
+      dropdown.classList.remove('show');
+      input.blur();
+    }
+  });
+
+  // 点击外部关闭
+  document.addEventListener('click', function(e) {
+    if (!document.getElementById('bondCombo').contains(e.target)) {
+      dropdown.classList.remove('show');
+    }
+  });
+}
+
+// ============ 筛选数据 ============
+function getFilteredSignals() {
+  const bondVal = selectedBond;
+  const ratioVal = document.getElementById('ratioSelect').value;
+  const yearVal = document.getElementById('yearSelect').value;
+
+  let signals = [];
+
+  if (bondVal === '__all__') {
+    Object.entries(DATA.bonds).forEach(([code, b]) => {
+      b.signals.forEach(s => signals.push({ ...s, bond_code: code, bond_name: b.name }));
+    });
+  } else {
+    const b = DATA.bonds[bondVal];
+    if (b) {
+      b.signals.forEach(s => signals.push({ ...s, bond_code: bondVal, bond_name: b.name }));
+    }
+  }
+
+  // 倍数筛选
+  if (ratioVal !== '__all__') {
+    signals = signals.filter(s => {
+      const r = s.ratio;
+      if (ratioVal === '2~3x') return r >= 2 && r < 3;
+      if (ratioVal === '3~5x') return r >= 3 && r < 5;
+      if (ratioVal === '5~10x') return r >= 5 && r < 10;
+      if (ratioVal === '>10x') return r >= 10;
+      return true;
+    });
+  }
+
+  // 年份筛选
+  if (yearVal !== '__all__') {
+    signals = signals.filter(s => s.date.startsWith(yearVal));
+  }
+
+  return signals;
+}
+
+// ============ 统计计算 ============
+function calcStats(signals, period) {
+  const upKey = `up_${period}w`;
+  const downKey = `down_${period}w`;
+  const ups = signals.map(s => s[upKey]).filter(v => v !== null && v !== undefined);
+  const downs = signals.map(s => s[downKey]).filter(v => v !== null && v !== undefined);
+
+  if (ups.length === 0) return null;
+
+  const avgUp = ups.reduce((a, b) => a + b, 0) / ups.length;
+  const avgDown = downs.length > 0 ? downs.reduce((a, b) => a + b, 0) / downs.length : 0;
+  const medianUp = [...ups].sort((a, b) => a - b)[Math.floor(ups.length / 2)];
+  const medianDown = downs.length > 0 ? [...downs].sort((a, b) => a - b)[Math.floor(downs.length / 2)] : 0;
+  const upGt0 = ups.filter(v => v > 0).length / ups.length * 100;
+  const downLt0 = downs.filter(v => v < 0).length / (downs.length || 1) * 100;
+  const plRatio = avgDown !== 0 ? Math.abs(avgUp / avgDown) : 0;
+
+  return {
+    count: ups.length,
+    avgUp: +avgUp.toFixed(2),
+    avgDown: +avgDown.toFixed(2),
+    medianUp: +medianUp.toFixed(2),
+    medianDown: +medianDown.toFixed(2),
+    upGt0: +upGt0.toFixed(1),
+    downLt0: +downLt0.toFixed(1),
+    plRatio: +plRatio.toFixed(2),
+    ups,
+    downs,
+  };
+}
+
+// ============ 更新页面 ============
+function update() {
+  filteredSignals = getFilteredSignals();
+  updateCards();
+  updateCharts();
+  updateTable();
+}
+
+function updateCards() {
+  const area = document.getElementById('cardsArea');
+  const bondCount = new Set(filteredSignals.map(s => s.bond_code)).size;
+
+  let html = `<div class="card count"><div class="label">信号总数</div><div class="value">${filteredSignals.length}</div><div class="sub">涉及 ${bondCount} 只转债</div></div>`;
+
+  PERIODS.forEach(p => {
+    const s = calcStats(filteredSignals, p);
+    if (s) {
+      html += `<div class="card up"><div class="label">${p}w 平均上行差额</div><div class="value">${s.avgUp}</div><div class="sub">中位数 ${s.medianUp} | 正值占比 ${s.upGt0}%</div></div>`;
+    } else {
+      html += `<div class="card up"><div class="label">${p}w 平均上行差额</div><div class="value">-</div><div class="sub"></div></div>`;
+    }
+  });
+
+  area.innerHTML = html;
+}
+
+// ============ 图表 ============
+const chartInstances = {};
+
+function getChart(id) {
+  if (!chartInstances[id]) {
+    chartInstances[id] = echarts.init(document.getElementById(id));
+  }
+  return chartInstances[id];
+}
+
+function updateCharts() {
+  chart1();
+  chart2();
+  chart3();
+  chart4();
+  chart5();
+  chart6();
+}
+
+// 图1: 上行/下行对比柱状图
+function chart1() {
+  const chart = getChart('chart1');
+  const periods = PERIODS.map(p => `${p}w`);
+  const upData = [];
+  const downData = [];
+
+  PERIODS.forEach(p => {
+    const s = calcStats(filteredSignals, p);
+    upData.push(s ? s.avgUp : 0);
+    downData.push(s ? Math.abs(s.avgDown) : 0);
+  });
+
+  chart.setOption({
+    tooltip: { trigger: 'axis', valueFormatter: v => v + '元' },
+    legend: { data: ['平均上行差额', '平均下行差额(绝对值)'], top: 0 },
+    grid: { top: 40, bottom: 30, left: 60, right: 20 },
+    xAxis: { type: 'category', data: periods },
+    yAxis: { type: 'value', name: '元' },
+    series: [
+      { name: '平均上行差额', type: 'bar', data: upData, itemStyle: { color: '#cf1322' }, barWidth: '30%', label: { show: true, position: 'top', formatter: '{c}', fontSize: 11 } },
+      { name: '平均下行差额(绝对值)', type: 'bar', data: downData, itemStyle: { color: '#3f8600' }, barWidth: '30%', label: { show: true, position: 'top', formatter: '{c}', fontSize: 11 } },
+    ],
+  }, true);
+}
+
+// 图2: 信号时间线
+function chart2() {
+  const chart = getChart('chart2');
+  const sorted = [...filteredSignals].sort((a, b) => a.date.localeCompare(b.date));
+  const dates = sorted.map(s => s.date);
+  const ratios = sorted.map(s => s.ratio);
+  const up4 = sorted.map(s => s.up_4w);
+  const up8 = sorted.map(s => s.up_8w);
+  const up16 = sorted.map(s => s.up_16w);
+  const up20 = sorted.map(s => s.up_20w);
+
+  chart.setOption({
+    tooltip: { trigger: 'axis' },
+    legend: { data: ['成交额倍数', '4w上行', '8w上行', '16w上行', '20w上行'], top: 0 },
+    grid: { top: 40, bottom: 30, left: 60, right: 60 },
+    xAxis: { type: 'category', data: dates, axisLabel: { rotate: 45, fontSize: 10 } },
+    yAxis: [
+      { type: 'value', name: '倍数', position: 'left' },
+      { type: 'value', name: '差额(元)', position: 'right' },
+    ],
+    dataZoom: [{ type: 'inside' }, { type: 'slider', height: 20, bottom: 5 }],
+    series: [
+      { name: '成交额倍数', type: 'bar', data: ratios, itemStyle: { color: '#597ef7' }, barMaxWidth: 6 },
+      { name: '4w上行', type: 'line', data: up4, yAxisIndex: 1, lineStyle: { width: 1 }, symbol: 'circle', symbolSize: 3, itemStyle: { color: '#ff7875' } },
+      { name: '8w上行', type: 'line', data: up8, yAxisIndex: 1, lineStyle: { width: 1 }, symbol: 'circle', symbolSize: 3, itemStyle: { color: '#ffa940' } },
+      { name: '16w上行', type: 'line', data: up16, yAxisIndex: 1, lineStyle: { width: 1 }, symbol: 'circle', symbolSize: 3, itemStyle: { color: '#cf1322' } },
+      { name: '20w上行', type: 'line', data: up20, yAxisIndex: 1, lineStyle: { width: 1 }, symbol: 'circle', symbolSize: 3, itemStyle: { color: '#722ed1' } },
+    ],
+  }, true);
+}
+
+// 图3: 倍数 vs 上行散点图
+function chart3() {
+  const chart = getChart('chart3');
+  const valid = filteredSignals.filter(s => s.up_16w !== null && s.up_16w !== undefined);
+  const scatterData = valid.map(s => [s.ratio, s.up_16w, s.down_16w, s.bond_name, s.date]);
+
+  chart.setOption({
+    tooltip: {
+      formatter: function(p) {
+        const d = p.data;
+        return `${d[3]}<br/>日期: ${d[4]}<br/>倍数: ${d[0]}x<br/>16w上行差额: ${d[1]}元<br/>16w下行差额: ${d[2]}元`;
+      },
+    },
+    grid: { top: 20, bottom: 40, left: 60, right: 20 },
+    xAxis: { type: 'value', name: '成交额倍数', nameLocation: 'middle', nameGap: 25 },
+    yAxis: { type: 'value', name: '16w上行差额(元)' },
+    dataZoom: [{ type: 'inside' }, { type: 'slider', height: 20, bottom: 5 }],
+    series: [{
+      type: 'scatter', data: scatterData, symbolSize: 6,
+      itemStyle: {
+        color: function(params) {
+          const down = params.data[2];
+          if (down > -3) return '#52c41a';
+          if (down > -5) return '#faad14';
+          return '#cf1322';
+        },
+      },
+    }],
+  }, true);
+}
+
+// 图4: 倍数分层对比
+function chart4() {
+  const chart = getChart('chart4');
+  const upSeries = [];
+  const downSeries = [];
+  const colors = ['#ff7875', '#ffa940', '#cf1322', '#722ed1'];
+
+  PERIODS.forEach((p, i) => {
+    const upData = [];
+    const downData = [];
+    RATIO_BANDS.forEach(band => {
+      let bs;
+      if (band === '2~3x') bs = filteredSignals.filter(s => s.ratio >= 2 && s.ratio < 3);
+      else if (band === '3~5x') bs = filteredSignals.filter(s => s.ratio >= 3 && s.ratio < 5);
+      else if (band === '5~10x') bs = filteredSignals.filter(s => s.ratio >= 5 && s.ratio < 10);
+      else bs = filteredSignals.filter(s => s.ratio >= 10);
+      const s = calcStats(bs, p);
+      upData.push(s ? s.avgUp : 0);
+      downData.push(s ? Math.abs(s.avgDown) : 0);
+    });
+    upSeries.push({ name: `${p}w上行`, type: 'bar', data: upData, itemStyle: { color: colors[i] }, barGap: '10%', barCategoryGap: '30%' });
+    downSeries.push({ name: `${p}w下行(绝对值)`, type: 'bar', data: downData, itemStyle: { color: colors[i], opacity: 0.5 }, barGap: '10%', barCategoryGap: '30%' });
+  });
+
+  chart.setOption({
+    tooltip: { trigger: 'axis', valueFormatter: v => v + '元' },
+    legend: { data: upSeries.map(s=>s.name).concat(downSeries.map(s=>s.name)), top: 0, type: 'scroll' },
+    grid: { top: 40, bottom: 30, left: 60, right: 20 },
+    xAxis: { type: 'category', data: RATIO_BANDS },
+    yAxis: { type: 'value', name: '元' },
+    series: [...upSeries, ...downSeries],
+  }, true);
+}
+
+// 图5: 年度表现
+function chart5() {
+  const chart = getChart('chart5');
+  const years = [...new Set(filteredSignals.map(s => s.date.substring(0, 4)))].sort();
+  const series = [];
+  const colors = ['#ff7875', '#ffa940', '#cf1322', '#722ed1'];
+
+  PERIODS.forEach((p, i) => {
+    const data = years.map(y => {
+      const ys = filteredSignals.filter(s => s.date.startsWith(y));
+      const s = calcStats(ys, p);
+      return s ? s.avgUp : 0;
+    });
+    series.push({ name: `${p}w上行差额`, type: 'bar', data, itemStyle: { color: colors[i] }, barMaxWidth: 15 });
+  });
+
+  const countData = years.map(y => filteredSignals.filter(s => s.date.startsWith(y)).length);
+  series.push({ name: '信号数', type: 'line', data: countData, yAxisIndex: 1, lineStyle: { color: '#597ef7', width: 2 }, itemStyle: { color: '#597ef7' } });
+
+  chart.setOption({
+    tooltip: { trigger: 'axis' },
+    legend: { data: series.map(s => s.name), top: 0, type: 'scroll' },
+    grid: { top: 40, bottom: 30, left: 60, right: 60 },
+    xAxis: { type: 'category', data: years },
+    yAxis: [
+      { type: 'value', name: '差额(元)', position: 'left' },
+      { type: 'value', name: '信号数', position: 'right' },
+    ],
+    series,
+  }, true);
+}
+
+// 图6: 收益分布箱线图
+function chart6() {
+  const chart = getChart('chart6');
+  const categories = [];
+  const boxUpData = [];
+  const boxDownData = [];
+
+  PERIODS.forEach(p => {
+    const key = `${p}w`;
+    categories.push(key);
+
+    const ups = filteredSignals.map(s => s[`up_${p}w`]).filter(v => v !== null && v !== undefined).sort((a, b) => a - b);
+    const downs = filteredSignals.map(s => s[`down_${p}w`]).filter(v => v !== null && v !== undefined).sort((a, b) => a - b);
+
+    if (ups.length >= 5) {
+      const q1 = ups[Math.floor(ups.length * 0.25)];
+      const q2 = ups[Math.floor(ups.length * 0.5)];
+      const q3 = ups[Math.floor(ups.length * 0.75)];
+      boxUpData.push([ups[0], q1, q2, q3, ups[ups.length - 1]]);
+    } else {
+      boxUpData.push([0, 0, 0, 0, 0]);
+    }
+
+    if (downs.length >= 5) {
+      const q1 = downs[Math.floor(downs.length * 0.25)];
+      const q2 = downs[Math.floor(downs.length * 0.5)];
+      const q3 = downs[Math.floor(downs.length * 0.75)];
+      boxDownData.push([downs[0], q1, q2, q3, downs[downs.length - 1]]);
+    } else {
+      boxDownData.push([0, 0, 0, 0, 0]);
+    }
+  });
+
+  chart.setOption({
+    tooltip: { trigger: 'item' },
+    legend: { data: ['上行差额分布', '下行差额分布'], top: 0 },
+    grid: { top: 40, bottom: 30, left: 60, right: 20 },
+    xAxis: { type: 'category', data: categories },
+    yAxis: { type: 'value', name: '元' },
+    series: [
+      { name: '上行差额分布', type: 'boxplot', data: boxUpData, itemStyle: { color: '#cf1322', borderColor: '#cf1322' } },
+      { name: '下行差额分布', type: 'boxplot', data: boxDownData, itemStyle: { color: '#3f8600', borderColor: '#3f8600' } },
+    ],
+  }, true);
+}
+
+// ============ 表格 ============
+function updateTable() {
+  const thead = document.getElementById('tableHead');
+  const tbody = document.getElementById('tableBody');
+
+  const cols = [
+    { key: 'bond_code', label: '代码' },
+    { key: 'bond_name', label: '名称' },
+    { key: 'date', label: '信号日期' },
+    { key: 'close', label: '收盘价' },
+    { key: 'ratio', label: '倍数' },
+    { key: 'up_4w', label: '4w上行' },
+    { key: 'down_4w', label: '4w下行' },
+    { key: 'up_8w', label: '8w上行' },
+    { key: 'down_8w', label: '8w下行' },
+    { key: 'up_16w', label: '16w上行' },
+    { key: 'down_16w', label: '16w下行' },
+    { key: 'up_20w', label: '20w上行' },
+    { key: 'down_20w', label: '20w下行' },
+  ];
+
+  // 表头
+  thead.innerHTML = '<tr>' + cols.map(c =>
+    `<th data-key="${c.key}" class="${sortCol === c.key ? 'sorted' : ''}">${c.label}<span class="sort-arrow">${sortCol === c.key ? (sortAsc ? '▲' : '▼') : '▪'}</span></th>`
+  ).join('') + '</tr>';
+
+  // 排序
+  let sorted = [...filteredSignals];
+  if (sortCol) {
+    sorted.sort((a, b) => {
+      let va = a[sortCol], vb = b[sortCol];
+      if (va === null || va === undefined) va = -Infinity;
+      if (vb === null || vb === undefined) vb = -Infinity;
+      if (typeof va === 'string') return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+      return sortAsc ? va - vb : vb - va;
+    });
+  }
+
+  // 限制显示行数
+  const maxRows = 500;
+  const display = sorted.slice(0, maxRows);
+
+  tbody.innerHTML = display.map(s => {
+    return '<tr>' + cols.map(c => {
+      let v = s[c.key];
+      if (v === null || v === undefined) v = '-';
+      else if (typeof v === 'number') v = +v.toFixed(2);
+      let cls = '';
+      if (c.key.startsWith('up_') && v !== '-') cls = v > 0 ? 'positive' : 'negative';
+      if (c.key.startsWith('down_') && v !== '-') cls = v < 0 ? 'negative' : 'positive';
+      return `<td class="${cls}">${v}</td>`;
+    }).join('') + '</tr>';
+  }).join('');
+
+  if (sorted.length > maxRows) {
+    tbody.innerHTML += `<tr><td colspan="${cols.length}" style="text-align:center;color:#999;padding:12px;">显示前 ${maxRows} 条，共 ${sorted.length} 条</td></tr>`;
+  }
+
+  // 表头点击排序
+  thead.querySelectorAll('th').forEach(th => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.key;
+      if (sortCol === key) sortAsc = !sortAsc;
+      else { sortCol = key; sortAsc = false; }
+      updateTable();
+    });
+  });
+}
+
+// ============ 窗口resize ============
+window.addEventListener('resize', () => {
+  Object.values(chartInstances).forEach(c => c.resize());
+});
+</script>
+</body>
+</html>
